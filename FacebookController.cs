@@ -1,72 +1,44 @@
 ﻿using Facebook;
-using Model;
 using System.Configuration;
-using System.Data.Entity.Infrastructure;
-using System.Linq;
-using System.Web.Http;
-using System.Web.Http.Description;
+using System.Web.Mvc;
 
 namespace DigitalGym.Controllers
 {
-    [Authorize]
-    public class FacebookTokensController : ApiController
+    public class FacebookController : Controller
     {
-        private DigitalgymDBEntities db = new DigitalgymDBEntities();
-
-        [ResponseType(typeof(FacebookToken))]
-        [Route("Facebook/GrantPermission")]
-        public IHttpActionResult GrantPermission() // gets access token and saves it to the DB
+        public ActionResult Index()
         {
-            if (!ModelState.IsValid)
-            {
-                return BadRequest(ModelState);
-            }
+            FacebookClient fb = new FacebookClient();
 
-            var client = new FacebookClient();
-            // getting access token (user should be logged in Facebook)
-            dynamic result = client.Get("oauth/access_token", new
+            if (Request.QueryString["code"] != null)
             {
-                client_id = ConfigurationManager.AppSettings["ApplicationId"], // ApplicationId and ApplicationSecret are stored in web.config file
-                client_secret = ConfigurationManager.AppSettings["ApplicationSecret"],
-                grant_type = "client_credentials"
-            });
-            FacebookToken token = new FacebookToken();
-            token.Username = User.Identity.Name;
-            token.AccessToken = result["access_token"];
-                        
-            db.FacebookToken.Add(token);
+                string accessCode = Request.QueryString["code"].ToString();
 
-            try
-            {
-                db.SaveChanges();
-            }
-            catch (DbUpdateException)
-            {
-                if (FacebookTokenExists(token.Id))
+                dynamic result = fb.Post("oauth/access_token", new
                 {
-                    return Conflict();
-                }
-                else
-                {
-                    throw;
-                }
+                    client_id = ConfigurationManager.AppSettings["ApplicationId"],
+                    client_secret = ConfigurationManager.AppSettings["ApplicationSecret"],
+                    redirect_uri = "http://localhost:58506/",
+                    code = accessCode
+                });
+
+                fb.AccessToken = result.access_token;
+
+                result = fb.Post("me/feed", new { message = "My message." }); // posting to FB
             }
-
-            return CreatedAtRoute("DefaultApi", new { id = token.Id }, token);
-        }
-
-        protected override void Dispose(bool disposing)
-        {
-            if (disposing)
+            else
             {
-                db.Dispose();
+                var loginUrl = fb.GetLoginUrl(new
+                {
+                    client_id = ConfigurationManager.AppSettings["ApplicationId"],
+                    redirect_uri = "http://localhost:58506/",
+                    response_type = "code",
+                    scope = "publish_actions" // allows to post on Facebook
+                });
+                Response.Redirect(loginUrl.AbsoluteUri);
             }
-            base.Dispose(disposing);
-        }
 
-        private bool FacebookTokenExists(int id)
-        {
-            return db.FacebookToken.Count(e => e.Id == id) > 0;
+            return View();
         }
     }
 }
